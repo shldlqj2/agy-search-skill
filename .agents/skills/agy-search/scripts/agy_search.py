@@ -16,6 +16,7 @@ from typing import Any
 
 CITATION_GROUP_RE = re.compile(r"\[([^\]]+)\]")
 SOURCE_ID_RE = re.compile(r"\bS[1-9][0-9]*\b")
+DEFAULT_TIMEOUT = "5m"
 DANGEROUS_TOOLS = {
     "browser_subagent",
     "call_mcp_tool",
@@ -211,7 +212,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--query", required=True)
     parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--timeout", default="2m", help="AGY --print-timeout value")
+    parser.add_argument(
+        "--timeout",
+        default=DEFAULT_TIMEOUT,
+        help=f"AGY --print-timeout value (default: {DEFAULT_TIMEOUT})",
+    )
     parser.add_argument("--effort", choices=("low", "medium", "high"), default="medium")
     args = parser.parse_args()
 

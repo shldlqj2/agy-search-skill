@@ -30,7 +30,10 @@ One observed lookup consumed about 124k tokens because AGY repeatedly reopened g
 - default to one producer call and one bounded verifier pass
 - avoid conversation continuation for unrelated queries
 - keep the requested result concise and schema constrained
-- set a finite `--print-timeout` (runner default: two minutes)
+- set a finite `--print-timeout` (runner default: five minutes)
+- adjust the timeout to expected work rather than retrying blindly: roughly two minutes
+  for a tiny lookup, five minutes for a normal request, and at most ten minutes for a
+  complex or high-risk multi-source review
 - do not retry unchanged prompts
 - stop once required claims have enough evidence
 
@@ -46,7 +49,7 @@ One observed lookup consumed about 124k tokens because AGY repeatedly reopened g
 | no completed `read_url_content` | hard fail: snippets or memory only |
 | declared URL not observed in reads | hard fail: fabricated or unread provenance |
 | dangerous tool actually used | hard fail even if the final answer looks correct |
-| timeout | preserve partial trace; do not synthesize from it |
+| timeout | preserve partial trace; do not synthesize from it; retry once only when the trace shows useful progress, using a justified finite timeout |
 | schema missing/invalid | one format-focused retry at most |
 
 ## Version Drift

@@ -36,6 +36,13 @@ editor are logical pipeline stages, not Codex subagents.
 - A targeted retry, when allowed, remains in the same primary agent and does not relax
   the one-retry limit.
 
+The runner timeout defaults to five minutes. The primary agent may set a different finite
+`--timeout` without asking the user when the expected workload warrants it: about two
+minutes for a tiny lookup, five minutes for a normal request, and up to ten minutes for a
+complex or high-risk multi-source review. Do not extend a timed-out run automatically
+unless its preserved trace shows useful progress and the single targeted-retry allowance
+still applies.
+
 ## Workflow
 
 ### 1. Frame the query

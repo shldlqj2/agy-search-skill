@@ -59,6 +59,9 @@ def valid_result(url="https://example.org/fact"):
 
 
 class ContractTests(unittest.TestCase):
+    def test_default_timeout_is_five_minutes(self):
+        self.assertEqual(agy_search.DEFAULT_TIMEOUT, "5m")
+
     def test_valid_trace_passes(self):
         events = [
             init(),

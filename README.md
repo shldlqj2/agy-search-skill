@@ -76,6 +76,8 @@ $agy-search Find the latest stable Python release and verify it against the offi
 ```
 
 The bundled adapter can also be run directly from the installed skill directory.
+Its default AGY timeout is five minutes. Codex may choose a shorter finite timeout for a
+tiny lookup or up to ten minutes for a complex multi-source review.
 
 Linux/macOS:
 
