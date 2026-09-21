@@ -15,6 +15,10 @@ The harness separates four responsibilities:
 3. audit provenance and independently verify atomic claims
 4. synthesize only supported claims, preserving conflicts and uncertainty
 
+These are logical stages in one primary Codex agent, not separate Codex subagents. The
+skill prohibits subagent fan-out and watcher agents: Codex starts one AGY CLI child
+process, waits for it directly, and performs verification and synthesis in the same run.
+
 ## Requirements
 
 - Codex with skill discovery enabled

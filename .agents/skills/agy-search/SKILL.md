@@ -21,11 +21,26 @@ description: Use the local Antigravity CLI as a traceable web-search backend for
 
 Before the first run, confirm `agy --version` succeeds and `agy models` does not request sign-in. Headless mode uses cached credentials.
 
+## Execution Model
+
+Minimize orchestration cost: the primary Codex agent owns query framing, AGY execution,
+verification, and synthesis in one continuous run. Coordinator, retriever, verifier, and
+editor are logical pipeline stages, not Codex subagents.
+
+- Do not spawn Codex subagents, workers, reviewers, coordinators, or watcher agents for
+  this skill.
+- Do not delegate independent subquestions. Keep them in one request and verify their
+  claims sequentially in the primary agent.
+- The runner starts one sandboxed AGY CLI child process for the retrieval attempt and
+  waits for that process directly. Do not create an agent merely to wait for completion.
+- A targeted retry, when allowed, remains in the same primary agent and does not relax
+  the one-retry limit.
+
 ## Workflow
 
 ### 1. Frame the query
 
-Write the question, time boundary, ambiguous terms, and acceptance criteria to `_workspace/agy-search/<run>/00_request.md`. Split multi-part requests into independently verifiable subquestions. Do not split a tiny lookup merely to create parallel work.
+Write the question, time boundary, ambiguous terms, and acceptance criteria to `_workspace/agy-search/<run>/00_request.md`. Represent multi-part requests as independently verifiable claim groups within the same request; do not dispatch them to separate agents.
 
 ### 2. Retrieve with the constrained agent
 
@@ -66,7 +81,7 @@ A passing structure check means the provenance chain is internally consistent. I
 
 ### 4. Verify claims independently
 
-Use `agy-search-verifier` on `01_result.json` and `01_trace.ndjson`. The verifier reopens cited sources independently and classifies each atomic claim as `supported`, `contradicted`, or `insufficient`. The producer's own `verification` field is only a lead, never final evidence.
+In the same primary Codex agent, apply `agy-search-verifier` to `01_result.json` and `01_trace.ndjson`. Independence means reopening and judging the evidence separately from the producer output; it does not require another Codex agent. Classify each atomic claim as `supported`, `contradicted`, or `insufficient`. The producer's own `verification` field is only a lead, never final evidence.
 
 - `standard`: verify every central claim; one primary source may be enough for an uncontroversial fact.
 - `high`: require a primary source plus an independent corroborating source for every consequential claim.

@@ -1,4 +1,4 @@
-# AGY Search Harness Team
+# AGY Search Execution Contract
 
 ## Goal
 
@@ -6,18 +6,18 @@ Turn the installed `agy` CLI into a traceable search backend whose final answers
 
 ## Architecture
 
-The outer pattern is a **Pipeline** with a local **Producer–Reviewer** gate. Query planning precedes retrieval; the retriever produces evidence; a verifier independently reviews it; an editor synthesizes only approved claims.
+The outer pattern is a single-agent **Pipeline** with a local **Producer–Reviewer** gate. Query planning precedes retrieval; AGY produces evidence; the primary Codex agent independently reviews it and synthesizes only approved claims.
 
-Independent subquestions may use bounded fan-out during retrieval, but all branches must share the same request snapshot, write separate artifacts, and return to one verifier. Default delegation depth is one.
+All pipeline stages run in one primary Codex agent. The role boundaries below separate evidence responsibilities; they are not instructions to create Codex subagents. Codex subagent delegation, fan-out, reviewer agents, and completion-watcher agents are prohibited for this skill. The primary agent waits for the AGY child process directly.
 
 ## Roles
 
 | Role | Responsibility | Implementation | Writes |
 | --- | --- | --- | --- |
-| Search coordinator | scope question, set freshness/risk, own final acceptance | `agy-search` skill | `00_request.md`, `final.md` |
-| Evidence retriever | search and read pages; emit structured sources and claims | sandboxed default AGY through runner; repo-local custom-agent adapter remains disabled pending CLI #585 | `01_trace.ndjson`, `01_result.json` |
-| Evidence verifier | independently reopen sources and judge claim entailment/coverage | `agy-search-verifier` skill | `02_verification.md` |
-| Answer editor | remove failed claims, preserve caveats, attach citations | coordinator role | `final.md` |
+| Search coordinator | scope question, set freshness/risk, own final acceptance | primary Codex agent using `agy-search` | `00_request.md`, `final.md` |
+| Evidence retriever | search and read pages; emit structured sources and claims | one sandboxed AGY CLI child process through the runner; repo-local custom-agent adapter remains disabled pending CLI #585 | `01_trace.ndjson`, `01_result.json` |
+| Evidence verifier | independently reopen sources and judge claim entailment/coverage | same primary Codex agent applying `agy-search-verifier` | `02_verification.md` |
+| Answer editor | remove failed claims, preserve caveats, attach citations | same primary Codex agent | `final.md` |
 
 The coordinator is the synthesis owner. The retriever never approves itself, and the editor may not restore rejected claims.
 
@@ -60,11 +60,15 @@ The coordinator is the synthesis owner. The retriever never approves itself, and
 - Isolated unsupported claim: `FIX` by deletion or qualification.
 - Pervasive unsupported claims or wrong question: at most one targeted `REDO`.
 - Conflicting authoritative sources: report the conflict; never resolve it by majority vote alone.
-- Partial fan-out failure: use remaining branches only if they still satisfy the evidence threshold and disclose the missing branch.
+- Multi-part request with partial evidence: publish only supported parts and disclose the missing evidence; do not create branches or workers to retry them.
 
-## Parallelism and Ownership
+## Execution and Ownership
 
-Parallelize only independent, read-heavy subquestions. Each worker owns a distinct `01_<branch>_*` artifact pair. No parallel writer may modify the skill, schema, shared trace, review, or final answer. The coordinator merges; the verifier reviews the merged claim inventory. Maximum delegation depth is one.
+Do not use Codex subagents or parallel workers. The primary Codex agent owns the request,
+review, and final answer. The AGY runner owns one producer artifact pair per attempt and
+blocks until its child process exits. Multi-part questions remain one request and are
+reviewed sequentially. The sole retry allowance is one targeted producer rerun for an
+explicit evidence gap.
 
 ## Removable Runtime Logic
 

@@ -17,11 +17,14 @@ from typing import Any
 CITATION_GROUP_RE = re.compile(r"\[([^\]]+)\]")
 SOURCE_ID_RE = re.compile(r"\bS[1-9][0-9]*\b")
 DANGEROUS_TOOLS = {
+    "browser_subagent",
     "call_mcp_tool",
     "define_subagent",
     "delete_knowledge",
     "generate_image",
     "invoke_subagent",
+    "manage_subagents",
+    "manage_task",
     "multi_replace_file_content",
     "notebook_edit",
     "notebook_execution",

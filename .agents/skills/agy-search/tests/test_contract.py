@@ -159,6 +159,18 @@ class ContractTests(unittest.TestCase):
         failed = {item["name"] for item in audit["checks"] if not item["passed"]}
         self.assertIn("no_dangerous_tools_used", failed)
 
+    def test_subagent_tool_use_fails(self):
+        events = [
+            init(["search_web", "read_url_content", "browser_subagent"]),
+            tool("search_web", {"query": "q"}),
+            tool("read_url_content", {"Url": "https://example.org/fact"}),
+            tool("browser_subagent", {"task": "research in parallel"}),
+        ]
+        audit = agy_search.audit_result(valid_result(), events, 0, {"status": "SUCCESS"})
+        self.assertFalse(audit["passed"])
+        failed = {item["name"] for item in audit["checks"] if not item["passed"]}
+        self.assertIn("no_dangerous_tools_used", failed)
+
 
 if __name__ == "__main__":
     unittest.main()
