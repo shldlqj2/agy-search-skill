@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agy-search-mcp"
+version = "0.1.0"
+description = "A local MCP server that exposes AGY-backed web search and page retrieval."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "mcp==2.2.0",
+]
+
+[project.scripts]
+agy-search-mcp = "agy_search_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

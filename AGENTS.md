@@ -2,19 +2,21 @@
 
 ## What
 
-- This repository develops `agy-search`, a repo-local skill that uses the installed Antigravity CLI as an evidence-producing web search backend.
-- The canonical workflow is `.agents/skills/agy-search/SKILL.md`; the installable team contract is `.agents/skills/agy-search/references/team-spec.md`.
-- Runtime evidence belongs under `_workspace/agy-search/` and must not be treated as source code.
+- This repository develops `agy-search-mcp`: a local stdio MCP server that exposes the installed Antigravity CLI as `agy_search` and `agy_fetch`.
+- The canonical runtime is `src/agy_search_mcp/`; MCP installation is `install-mcp.sh` or `install-mcp.ps1`.
+- `.agents/skills/` is a retained legacy compatibility and verification surface, not the default interface for new installations.
+- Runtime traces, fetched artifacts, and source indexes belong under the configured MCP state directory or `_workspace/agy-search/`; never treat them as source code or commit them.
 
 ## Why
 
-- `agy` is a generative agent, not a deterministic search index. A fluent answer or a plausible URL is never proof by itself.
-- Search, source reading, claim verification, and synthesis stay separate so unsupported claims can be rejected without discarding useful retrieval work.
+- AGY is generative, so fluent output or a plausible URL is not proof. The MCP backend must preserve traces and return search URLs only when AGY actually read them in the same request.
+- AGY performs all web search and page retrieval. Do not add a Codex-native-search fallback.
+- A tool request is one directly awaited AGY child process. Do not implement Codex subagents, watcher agents, status polling, or automatic AGY retry loops.
 
 ## How
 
-- Run contract tests: `python3 -m unittest discover -s .agents/skills/agy-search/tests -v`
-- Run a search: `python3 .agents/skills/agy-search/scripts/agy_search.py --out-dir _workspace/agy-search/manual --query "..."`
-- Install globally on Linux/macOS: `./install.sh`
-- Install globally on Windows PowerShell: `.\install.ps1`
-- Read `.agents/skills/agy-search/references/team-spec.md` before changing role boundaries or verification gates.
+- Run MCP tests: `python3 -m unittest discover -s tests -v`
+- Run retained legacy contract tests: `python3 -m unittest discover -s .agents/skills/agy-search/tests -v`
+- Check formatting whitespace: `git diff --check`
+- Before live testing, confirm `agy models` succeeds. Use a dedicated ignored data directory with `AGY_SEARCH_MCP_DATA_DIR`.
+- Read [plan.md](plan.md), [handoff.md](handoff.md), and [the MCP design record](docs/agy-search-mcp-plan.ko.md) before changing retrieval, timeout, evidence, or migration behavior.

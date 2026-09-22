@@ -1,4 +1,10 @@
 _workspace/
+.agy-search-mcp/
+.venv/
+.mcp-dev-deps/
+*.egg-info/
+build/
+dist/
 __pycache__/
 *.py[cod]
 .DS_Store

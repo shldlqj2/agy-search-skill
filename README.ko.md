@@ -1,136 +1,141 @@
-# agy-search 스킬
+# AGY Search MCP
 
 한국어 | [English](README.md)
 
-Codex에서 로컬 Antigravity CLI(`agy`)를 추적 가능한 웹 검색 백엔드로 사용하는 스킬입니다. AGY의 도구 실행 추적을 보존하고, 주장별 출처를 요구하며, 실제로 읽지 않은 페이지를 인용하면 결과를 거부합니다. 최종 합성 전에는 별도의 독립 검증 계약을 적용합니다.
+`agy-search-mcp`는 로컬 Antigravity CLI(`agy`)를 Codex의 로컬 MCP 도구 두 개로 노출합니다.
 
-## 왜 필요한가
+- `agy_search`: 현재 웹을 검색하고, 같은 요청에서 AGY가 실제로 연 URL만 반환
+- `agy_fetch`: `agy_search`가 반환한 `source_id` 또는 하나의 URL을 AGY로 읽기
 
-에이전트는 자연스러운 답변을 만들면서 URL을 지어내거나, 실제로 존재하지만 읽지 않은 페이지를 인용하거나, 주장을 뒷받침하지 않는 관련 자료를 붙일 수 있습니다. `agy-search`는 AGY를 결정론적 검색 인덱스가 아니라 검증되지 않은 검색 생산자로 취급합니다.
+웹 검색과 신규 페이지 읽기는 오직 AGY가 수행합니다. Codex 내장 검색으로 자동 전환하지 않습니다.
 
-하네스는 다음 책임을 분리합니다.
+## 왜 스킬 대신 MCP인가
 
-1. 질문의 범위와 최신성 기준 설정
-2. AGY를 이용한 검색 및 원문 읽기
-3. 출처 추적 감사와 원자적 주장 단위의 독립 검증
-4. 검증된 주장만 합성하고 충돌과 불확실성 보존
+기존 스킬은 Codex 프롬프트 안에서 검색·검토·합성을 조율했습니다. MCP 전환 후에는 경계가 분명한 검색 작업을 일반 로컬 코드가 처리합니다. 도구 호출 하나가 sandbox AGY 자식 프로세스 하나를 시작하고 직접 종료까지 기다린 뒤 최종 결과를 반환합니다. Codex 서브에이전트, watcher, 완료 상태 폴링, 모델 기반 재시도 루프를 만들지 않습니다.
 
-이는 하나의 기본 Codex 에이전트 안에서 수행하는 논리적 단계이며, 별도의 Codex 서브에이전트가 아닙니다. 이 스킬은 서브에이전트 fan-out과 완료 감시 에이전트를 금지합니다. Codex가 AGY CLI 자식 프로세스 하나를 직접 실행하고 기다린 뒤, 같은 실행 안에서 검증과 합성을 완료합니다.
+AGY는 결정론적 검색 인덱스가 아니라 생성형 에이전트입니다. 따라서 서버는 요청별 NDJSON trace를 보존하고, AGY가 검색하고 반환 URL을 같은 실행에서 모두 읽지 않으면 검색 결과를 거부합니다. 위험 도구 사용도 거부합니다. 이 provenance 검사는 출처 연결을 검증할 뿐 내용의 진실을 보장하지 않으므로, 중요한 주장은 1차 출처로 별도 확인하세요.
 
 ## 요구 사항
 
-- 스킬 검색이 활성화된 Codex
-- `PATH`에서 실행 가능한 Antigravity CLI `agy`
-- 인증된 AGY 세션(`agy models`가 성공해야 함)
-- Python 3
+- 로컬 stdio MCP를 지원하는 Codex CLI
+- `PATH`에서 실행되고 인증된 `agy` (`agy models` 성공)
+- Python 3.10 이상과 `pip`
 - Linux/macOS의 Bash 또는 Windows PowerShell
 
-현재 실제 검증에 사용한 AGY 버전은 1.2.4입니다.
+구현은 AGY 1.2.7 및 MCP Python SDK 2.2.0으로 실제 호출 검증했습니다.
 
-## 전역 설치
+## 설치
 
-저장소를 복제한 뒤 루트에서 설치 스크립트를 실행합니다. `agy-search`와 `agy-search-verifier`가 함께 Codex 전역 스킬 디렉터리에 설치됩니다.
+저장소 루트에서 MCP 설치기를 실행하세요. 선택한 Python의 사용자 site에 패키지를 설치하고 Codex에 `agy-search` 로컬 서버를 등록합니다. deep 요청이 종료될 수 있도록 Codex 도구 timeout도 660초로 설정합니다.
 
 Linux/macOS:
 
 ```bash
-chmod +x install.sh
-./install.sh
+chmod +x install-mcp.sh
+./install-mcp.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install.ps1
+.\install-mcp.ps1
 ```
 
-기본 설치 위치:
-
-- `CODEX_HOME`이 설정되어 있으면 `$CODEX_HOME/skills`
-- Linux/macOS에서는 그 외의 경우 `~/.codex/skills`
-- Windows에서는 그 외의 경우 `$HOME\.codex\skills`
-
-테스트용 사용자 지정 경로:
+변경 없이 미리 보기:
 
 ```bash
-./install.sh --target /tmp/codex-skills --dry-run
+./install-mcp.sh --dry-run
 ```
 
 ```powershell
-.\install.ps1 -Target C:\temp\codex-skills -DryRun
+.\install-mcp.ps1 -DryRun
 ```
 
-기존 설치본은 교체 전에 타임스탬프가 붙은 경로로 백업됩니다. 복구 가능성을 의도적으로 포기할 때만 `--no-backup` 또는 `-NoBackup`을 사용하세요. 설치 후 Codex를 재시작하거나 스킬을 다시 로드해야 할 수 있습니다.
+기본 상태 경로는 Linux/macOS에서 `~/.local/state/agy-search-mcp`, Windows에서 `%LOCALAPPDATA%\agy-search-mcp`입니다. 이곳에는 trace와 작은 로컬 `source_id` 인덱스, 읽어 온 콘텐츠가 남을 수 있으므로 적절히 보호하세요. `--data-dir` 또는 `-DataDir`로 바꿀 수 있습니다.
 
-이 스킬의 전역 설치 대상은 Codex입니다. AGY 자체의 스킬 디렉터리에는 설치하지 마세요. 이 스킬은 `agy`를 외부 백엔드로 호출하므로 AGY 내부에 설치하면 실행 경계가 잘못됩니다.
+등록 뒤 Codex를 재시작하거나 새 세션을 시작하세요. 기존 `agy-search` 스킬은 자동 삭제하지 않습니다. MCP가 정상 동작함을 먼저 확인한 뒤, 스킬 라우팅 혼선을 일으킬 때만 직접 제거하세요.
 
-## 사용법
+### 수동 등록
 
-자연어로 요청하거나 명시적으로 호출할 수 있습니다.
-
-```text
-$agy-search 최신 안정 Python 릴리스를 찾고 공식 릴리스 페이지로 검증해줘.
-```
-
-설치된 스킬 디렉터리에서 어댑터를 직접 실행할 수도 있습니다.
-AGY 기본 타임아웃은 5분입니다. Codex는 간단한 조회에는 더 짧은 유한 타임아웃을, 복잡한 다중 출처 검토에는 최대 10분을 선택할 수 있습니다.
-
-Linux/macOS:
+수동 설치가 필요하다면 Codex가 실행할 동일한 Python으로 패키지를 설치한 다음 등록합니다.
 
 ```bash
-python3 ~/.codex/skills/agy-search/scripts/agy_search.py \
-  --out-dir _workspace/agy-search/python-release \
-  --query "현재 최신 안정 Python 릴리스는 무엇인가?"
+python3 -m pip install --user --upgrade .
+codex mcp add agy-search \
+  --env "AGY_SEARCH_MCP_DATA_DIR=$HOME/.local/state/agy-search-mcp" \
+  -- python3 -m agy_search_mcp.server
 ```
 
-Windows PowerShell:
+`$CODEX_HOME/config.toml`(또는 `~/.codex/config.toml`)의 `[mcp_servers.agy-search]` 아래에 다음을 추가하세요.
 
-```powershell
-py -3 "$HOME\.codex\skills\agy-search\scripts\agy_search.py" `
-  --out-dir "_workspace\agy-search\python-release" `
-  --query "현재 최신 안정 Python 릴리스는 무엇인가?"
+```toml
+startup_timeout_sec = 30
+tool_timeout_sec = 660
 ```
 
-## 환각 방어
+## 도구 계약
 
-기계적 감사는 다음 조건을 요구합니다.
+`agy_search`는 자연어 `query`와 선택적 `max_results`(1–10), 도메인 allowlist, 선호 언어, 최신성 기준일, `depth`를 받습니다.
 
-- 성공한 터미널 결과
-- 완료된 `search_web` 및 `read_url_content` 호출
-- 선언된 모든 출처 URL과 실제 완료된 읽기 호출 URL의 정확한 일치
-- 모든 사실 주장에 선언된 출처 ID 연결
-- 답변 인용에 선언된 출처만 사용
-- 명령, 파일 쓰기, MCP, 예약 작업, 서브에이전트 도구 미사용
-- JSON Schema를 만족하는 결과와 보존된 NDJSON 추적
+| depth | 기본 AGY 기한 | 용도 |
+| --- | ---: | --- |
+| `quick` | 180초 | 좁은 단건 조회 |
+| `standard` | 300초 | 일반 조사 |
+| `deep` | 600초 | 다중 출처·상충 검토 |
 
-기계적 통과는 출처 연결의 일관성을 증명할 뿐, 내용의 진실성을 증명하지 않습니다. `agy-search-verifier`가 원문을 다시 열고 각 주장을 `supported`, `contradicted`, `insufficient`로 판정해야 합니다. 의료·법률·금융·보안 또는 되돌릴 수 없는 결정에는 권위 있는 자료와 자격을 갖춘 사람의 검토가 필요합니다.
+`timeout_seconds`(1–600)를 명시하면 이 정책을 덮어씁니다. 일반 검색의 기본값은 여전히 5분입니다. `agy_fetch`는 기본 5분이며 동일한 명시적 override를 지원합니다.
 
-## 산출물
+검색 결과에는 이 서버 상태 경로 안에서만 유효한 `source_id`, URL, 짧은 AGY 근거 기반 요약, 발췌, provenance가 있습니다. 페이지 내용을 더 읽을 때 이 ID를 `agy_fetch`에 전달하세요. `agy_fetch`의 본문은 다음처럼 구분합니다.
 
-각 실행은 `_workspace/agy-search/<run>/` 아래에 결정론적인 핸드오프 파일을 남깁니다.
+- `agy_read_artifact`: 해당 요청에서 AGY가 읽은 artifact에서 서버가 추출한 텍스트
+- `agy_generated_extract`: 안전하게 사용할 artifact가 없을 때 AGY가 생성한 명시적 fallback
+
+두 번째 항목을 원문 인용처럼 표현하면 안 됩니다. source ID는 상태 경로가 보존되는 동안만 유지되며, URL로는 언제든 AGY 재읽기를 요청할 수 있습니다.
+
+서버는 한 번에 AGY 요청 하나만 실행합니다. 동시 요청은 숨은 대기열이나 polling 없이 명시적인 `busy` 오류를 받습니다. 의도적으로 `status`나 `poll` 도구는 제공하지 않습니다.
+
+## 증거와 실패 처리
+
+각 호출은 상태 경로 아래의 별도 디렉터리에 증거를 남깁니다.
 
 ```text
-00_request.md
-01_trace.ndjson
-01_result.json
-01_stderr.log
-02_verification.md
-final.md
+runs/<request_id>/
+  trace.ndjson
+  stderr.log
+  run.json
+  mcp-response.json
+source-index.json
 ```
 
-원본 추적은 감사 증거입니다. 실패한 실행을 통과시키기 위해 수정하면 안 됩니다.
+인증·권한·provenance·timeout·취소·프로세스 실패 시 부분 trace와 stderr를 보존합니다. 실패를 빈 검색 결과로 바꾸지 않고 구조화된 오류 결과로 반환하며, 서버가 AGY를 자동 재실행하지 않습니다.
 
-## 검증
+웹 취득은 AGY만 담당합니다. 인용 형식과 핵심 주장 검토를 포함한 최종 답변 책임은 호출자에게 있습니다. 의료·법률·금융·보안 또는 되돌리기 어려운 결정을 위해서는 권위 있는 출처를 직접 확인하고 적절한 전문가 판단을 더하세요.
+
+## 개발·검증
+
+현재 환경에 패키지를 설치한 뒤 MCP 테스트와 유지 중인 legacy 계약 테스트를 모두 실행합니다.
 
 ```bash
+python3 -m pip install --user -e .
+python3 -m unittest discover -s tests -v
 python3 -m unittest discover -s .agents/skills/agy-search/tests -v
+git diff --check
 ```
 
-닫힌 지식만 사용한 답변, 읽지 않은 URL, 존재하지 않는 출처 ID, 누락·그룹 인용, 위험 도구 사용을 검사하는 계약 테스트가 포함됩니다. 정상 최신정보 질의와 조작된 전제에 대한 실제 카나리도 수행했습니다.
+`agy models`로 인증을 확인한 뒤 로컬 stdio 서버를 직접 띄울 수 있습니다.
 
-## 알려진 AGY 제약
+```bash
+AGY_SEARCH_MCP_DATA_DIR=_workspace/agy-search/manual-mcp \
+python3 -m agy_search_mcp.server
+```
 
-AGY CLI 1.2.4에서 [google-antigravity/antigravity-cli#585](https://github.com/google-antigravity/antigravity-cli/issues/585)가 재현됐습니다. 요청한 워크스페이스 커스텀 에이전트를 찾지 못하고 기본 에이전트로 조용히 대체될 수 있습니다. 따라서 현재 러너는 기본 에이전트를 `--sandbox`에서 실행하고 넓은 도구 노출을 보고하며, 위험 도구가 실제 사용되면 결과를 폐기합니다. 제한된 커스텀 에이전트 어댑터는 `init.tools`가 정상 로드를 증명할 때까지 비활성 상태입니다.
+마지막 명령은 stdio 서버이므로 터미널에서 질의하지 말고 MCP 클라이언트로 연결하세요. `_workspace/agy-search/` 런타임 증거는 의도적으로 커밋하지 않습니다.
 
-전체 설계는 [팀 계약](.agents/skills/agy-search/references/team-spec.md), [환각 방어 규칙](.agents/skills/agy-search/references/hallucination-control.md), [검증 기록](docs/harness/agy-search/validation.md)을 참고하세요.
+## 전환·프로젝트 문서
+
+- [MCP 전환 설계와 조사 기록](docs/agy-search-mcp-plan.ko.md)
+- [중단 후 이어갈 수 있는 실행 계획](plan.md)
+- [현재 작업 인계](handoff.md)
+- [legacy 스킬 실행 계약](.agents/skills/agy-search/references/team-spec.md)
+
+legacy 스킬 소스는 호환성과 계약 테스트를 위해 `.agents/skills/`에 남아 있습니다. 기존 `install.sh` / `install.ps1`은 의도적으로 프롬프트 기반 스킬 흐름을 유지하려는 경우에만 사용하세요. 새 설치는 위 MCP 설치기를 사용하세요.

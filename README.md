@@ -1,139 +1,141 @@
-# agy-search skill
+# AGY Search MCP
 
 [한국어](README.ko.md) | English
 
-Use the local Antigravity CLI (`agy`) as a traceable web-search backend from Codex. The skill records AGY's tool trace, requires claim-level sources, rejects citations to pages that were not actually read, and routes the result through an independent verification contract before synthesis.
+`agy-search-mcp` makes the locally installed Antigravity CLI (`agy`) available to Codex as two local MCP tools:
 
-## Why this exists
+- `agy_search` — search the current web and return only result URLs that AGY opened in the same request
+- `agy_fetch` — read one URL, or a `source_id` returned by `agy_search`, through AGY
 
-An agent can return a fluent answer while inventing a URL, citing a real but unread page, or attaching a related source that does not support the claim. `agy-search` treats AGY as an untrusted retrieval producer rather than a deterministic search index.
+AGY is the only web-search and page-read backend. There is no automatic Codex-native-search fallback.
 
-The harness separates four responsibilities:
+## Why MCP instead of a skill?
 
-1. scope the question and freshness requirement
-2. search and read sources with AGY
-3. audit provenance and independently verify atomic claims
-4. synthesize only supported claims, preserving conflicts and uncertainty
+The previous skill workflow asked Codex to coordinate retrieval, review, and synthesis in its prompt. This MCP server moves the bounded retrieval job into ordinary local code. A tool call starts one sandboxed AGY child process, waits for it directly, and returns its final result. It does **not** create Codex subagents, watcher agents, completion polls, or model-driven retry loops.
 
-These are logical stages in one primary Codex agent, not separate Codex subagents. The
-skill prohibits subagent fan-out and watcher agents: Codex starts one AGY CLI child
-process, waits for it directly, and performs verification and synthesis in the same run.
+AGY is still generative, not a deterministic search index. The server therefore keeps a per-request NDJSON trace and rejects a search response when AGY did not both search and open every returned URL. It rejects dangerous AGY tool use too. That provenance gate is not a truth guarantee: use primary sources and independently check important claims.
 
 ## Requirements
 
-- Codex with skill discovery enabled
-- Antigravity CLI `agy` on `PATH`
-- an authenticated AGY session (`agy models` should succeed)
-- Python 3
-- Linux/macOS with Bash, or Windows with PowerShell
+- Codex CLI with local stdio MCP support
+- `agy` on `PATH`, with an authenticated session (`agy models` succeeds)
+- Python 3.10 or later and `pip`
+- Linux/macOS with Bash, or Windows PowerShell
 
-The currently tested AGY version is 1.2.4.
+The implementation was live-tested with AGY 1.2.7 and MCP Python SDK 2.2.0.
 
-## Global installation
+## Install
 
-Clone this repository, then run the installer from its root. It installs both `agy-search` and `agy-search-verifier` into the global Codex skill directory.
+Run the MCP installer from this repository. It installs the Python package to the selected Python user's site, registers a local `agy-search` server in Codex, and sets a 660-second client tool timeout so a deep AGY request can finish.
 
 Linux/macOS:
 
 ```bash
-chmod +x install.sh
-./install.sh
+chmod +x install-mcp.sh
+./install-mcp.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install.ps1
+.\install-mcp.ps1
 ```
 
-Default destinations:
-
-- `$CODEX_HOME/skills` when `CODEX_HOME` is defined
-- `~/.codex/skills` on Linux/macOS otherwise
-- `$HOME\.codex\skills` on Windows otherwise
-
-Use a custom destination when testing:
+Preview without changing anything:
 
 ```bash
-./install.sh --target /tmp/codex-skills --dry-run
+./install-mcp.sh --dry-run
 ```
 
 ```powershell
-.\install.ps1 -Target C:\temp\codex-skills -DryRun
+.\install-mcp.ps1 -DryRun
 ```
 
-Existing installations are moved to timestamped backups before replacement. Pass `--no-backup` or `-NoBackup` only when you intentionally want replacement without recovery. Restart Codex or reload skills after installation.
+The default server state directory is `~/.local/state/agy-search-mcp` on Linux/macOS and `%LOCALAPPDATA%\agy-search-mcp` on Windows. It stores traces and the small local `source_id` index; it may contain retrieved content and should be treated accordingly. Use `--data-dir` or `-DataDir` to change it.
 
-This skill belongs in Codex's global skill directory. Do not install it as an Antigravity skill: it invokes `agy` as an external backend, so installing it inside AGY would create the wrong execution boundary.
+Restart Codex or start a new session after registration. The installer does not remove existing `agy-search` skills; confirm the MCP server first, then remove legacy skills yourself if they cause unwanted skill routing.
 
-## Usage
+### Manual registration
 
-Invoke the skill naturally or explicitly:
-
-```text
-$agy-search Find the latest stable Python release and verify it against the official release page.
-```
-
-The bundled adapter can also be run directly from the installed skill directory.
-Its default AGY timeout is five minutes. Codex may choose a shorter finite timeout for a
-tiny lookup or up to ten minutes for a complex multi-source review.
-
-Linux/macOS:
+If installation must be done manually, install this package with the same Python that Codex will launch, then register it:
 
 ```bash
-python3 ~/.codex/skills/agy-search/scripts/agy_search.py \
-  --out-dir _workspace/agy-search/python-release \
-  --query "What is the latest stable Python release?"
+python3 -m pip install --user --upgrade .
+codex mcp add agy-search \
+  --env "AGY_SEARCH_MCP_DATA_DIR=$HOME/.local/state/agy-search-mcp" \
+  -- python3 -m agy_search_mcp.server
 ```
 
-Windows PowerShell:
+Add these two lines under `[mcp_servers.agy-search]` in `$CODEX_HOME/config.toml` (or `~/.codex/config.toml`):
 
-```powershell
-py -3 "$HOME\.codex\skills\agy-search\scripts\agy_search.py" `
-  --out-dir "_workspace\agy-search\python-release" `
-  --query "What is the latest stable Python release?"
+```toml
+startup_timeout_sec = 30
+tool_timeout_sec = 660
 ```
 
-## Hallucination controls
+## Tool contract
 
-The mechanical audit requires:
+`agy_search` accepts a natural-language `query` plus optional `max_results` (1–10), domain allowlist, source-language preference, freshness date, and depth:
 
-- a successful terminal result
-- completed `search_web` and `read_url_content` calls
-- every declared source URL to exactly match a URL observed in a completed read call
-- every factual claim to reference declared source IDs
-- answer citations to reference only declared sources
-- no command, write, MCP, scheduling, or subagent tool use
-- a parseable, schema-constrained result and preserved NDJSON trace
+| Depth | Default AGY deadline | Intended use |
+| --- | ---: | --- |
+| `quick` | 180 seconds | narrow lookup |
+| `standard` | 300 seconds | normal research |
+| `deep` | 600 seconds | multi-source or conflict-sensitive research |
 
-A mechanical pass proves provenance consistency, not truth. The `agy-search-verifier` skill must still reopen sources and classify claims as `supported`, `contradicted`, or `insufficient`. High-risk medical, legal, financial, security, or irreversible decisions require authoritative sources and qualified human review.
+An explicit `timeout_seconds` (1–600) overrides that policy. The default normal search remains five minutes. `agy_fetch` defaults to five minutes and supports the same explicit override.
 
-## Artifacts
+Search results have a server-local `source_id`, URL, short AGY-grounded summary, excerpt, and provenance. Pass that ID to `agy_fetch` when more page content is needed. `agy_fetch` labels returned content as either:
 
-Each run uses deterministic handoffs under `_workspace/agy-search/<run>/`:
+- `agy_read_artifact`: text extracted from AGY's own read artifact for that request
+- `agy_generated_extract`: AGY's clearly labeled fallback extract when no safe artifact is available
+
+Do not represent the latter as a verbatim quote. A source ID persists only while the server's state directory is retained; a direct `url` can always be fetched again through AGY.
+
+The server allows one active AGY request. A concurrent call receives an explicit `busy` error rather than waiting in a hidden queue or polling for status. There is intentionally no `status` or `poll` tool.
+
+## Evidence and failure behavior
+
+Each call writes a separate directory beneath the configured state directory:
 
 ```text
-00_request.md
-01_trace.ndjson
-01_result.json
-01_stderr.log
-02_verification.md
-final.md
+runs/<request_id>/
+  trace.ndjson
+  stderr.log
+  run.json
+  mcp-response.json
+source-index.json
 ```
 
-The raw trace is audit evidence and should not be rewritten to make a failed run pass.
+On authentication, permission, provenance, timeout, cancellation, or process failures, partial trace and stderr files are preserved. A failure is returned as a structured error result, never silently converted to an empty search result. The server does not automatically rerun AGY.
 
-## Validation
+Only AGY is asked to perform web retrieval. The rest of the answer, including citation style and critical-claim verification, remains the caller's responsibility. For medical, legal, financial, security, or irreversible decisions, inspect authoritative sources and use qualified human judgment.
+
+## Development and validation
+
+Install the package in the current environment, then run both the MCP tests and the retained legacy contract tests:
 
 ```bash
+python3 -m pip install --user -e .
+python3 -m unittest discover -s tests -v
 python3 -m unittest discover -s .agents/skills/agy-search/tests -v
+git diff --check
 ```
 
-The repository includes contract tests for closed-book answers, unread URLs, unknown source IDs, missing and grouped citations, and dangerous-tool usage. Live canaries cover a normal current-fact query and a fabricated premise.
+For a local live fetch after `agy models` confirms authentication:
 
-## Known AGY limitation
+```bash
+AGY_SEARCH_MCP_DATA_DIR=_workspace/agy-search/manual-mcp \
+python3 -m agy_search_mcp.server
+```
 
-AGY CLI 1.2.4 reproduced [google-antigravity/antigravity-cli#585](https://github.com/google-antigravity/antigravity-cli/issues/585): a requested workspace custom agent can silently fall back to the default agent. The runner therefore uses the default agent in `--sandbox`, reports broad tool exposure, and fails closed if a dangerous tool is actually used. The restricted custom-agent adapter remains disabled until `init.tools` proves it loaded correctly.
+The last command starts a stdio server, so use it through an MCP client rather than a terminal prompt. Runtime evidence under `_workspace/agy-search/` is intentionally not committed.
 
-See the [team contract](.agents/skills/agy-search/references/team-spec.md), [hallucination controls](.agents/skills/agy-search/references/hallucination-control.md), and [validation record](docs/harness/agy-search/validation.md) for the full design.
+## Migration and project docs
+
+- [Migration design and research notes](docs/agy-search-mcp-plan.ko.md)
+- [Resumable implementation plan](plan.md)
+- [Current handoff state](handoff.md)
+- [Legacy skill execution contract](.agents/skills/agy-search/references/team-spec.md)
+
+The legacy skill sources remain in `.agents/skills/` for compatibility and for their contract tests. Their `install.sh` / `install.ps1` flow is still available only for users intentionally keeping the prompt-driven skill workflow; new installations should use the MCP installers above.
